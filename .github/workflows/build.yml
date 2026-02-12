@@ -1,0 +1,65 @@
+name: Silver Sniffer CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+
+  esp-idf-build:
+    name: ESP-IDF Firmware Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2
+
+      - name: Build firmware
+        run: idf.py build
+
+  python-backend:
+    name: Python Backend Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt || true
+
+      - name: Lint / Syntax Check
+        run: |
+          python -m py_compile $(git ls-files '*.py')
+
+  dashboard-build:
+    name: Dashboard Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dashboard deps
+        working-directory: dashboard
+        run: |
+          if [ -f package.json ]; then npm install; fi
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          if [ -f package.json ]; then npm run build; fi
