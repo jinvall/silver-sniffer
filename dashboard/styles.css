@@ -1,0 +1,310 @@
+/* ===========================
+   GLOBAL LAYOUT & THEME
+   =========================== */
+
+body {
+  background: #0a0a0a;
+  color: #e0e0e0;
+  font-family: monospace;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #66ccff;
+}
+
+.panel {
+  background: #111;
+  border: 1px solid #333;
+  padding: 10px;
+  margin: 5px;
+  border-radius: 4px;
+}
+
+#top-row,
+#bottom-row {
+  display: flex;
+  flex-direction: row;
+}
+
+#fps-value {
+  font-size: 48px;
+  color: #00ff99;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+td,
+th {
+  border-bottom: 1px solid #333;
+  padding: 4px;
+}
+
+/* ===========================
+   BLE RADAR KEY
+   =========================== */
+
+.ble-key {
+  margin-top: 10px;
+  padding: 10px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  width: 200px;
+  color: #e0e0e0;
+  font-size: 14px;
+}
+
+.ble-key-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: #66ccff;
+}
+
+.ble-key-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.ble-key-subtext {
+  margin-left: 20px;
+  font-size: 12px;
+  color: #999;
+}
+
+.ble-key-spacer {
+  height: 8px;
+}
+
+/* Color dots */
+.ble-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* Size dots */
+.ble-size-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: #888;
+  margin-right: 8px;
+}
+
+.ble-size-large {
+  width: 14px;
+  height: 14px;
+}
+
+.ble-size-small {
+  width: 6px;
+  height: 6px;
+}
+
+/* Distance ring icon */
+.ble-ring {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #666;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+/* ===========================
+   BLE TOOLTIP
+   =========================== */
+
+#bleTooltip {
+  position: absolute;
+  background: #111;
+  border: 1px solid #333;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 13px;
+  pointer-events: none;
+  display: none;
+  z-index: 9999;
+  white-space: nowrap;
+}
+/* ===========================
+   WIFI RADAR KEY (mirrors BLE)
+   =========================== */
+
+.wifi-key {
+  margin-top: 10px;
+  padding: 10px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  width: 200px;
+  color: #e0e0e0;
+  font-size: 14px;
+}
+
+.wifi-key-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: #66ccff;
+}
+
+.wifi-key-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.wifi-key-subtext {
+  margin-left: 20px;
+  font-size: 12px;
+  color: #999;
+}
+
+.wifi-key-spacer {
+  height: 8px;
+}
+
+/* Color dots */
+.wifi-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* Size dots */
+.wifi-size-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: #888;
+  margin-right: 8px;
+}
+
+.wifi-size-large {
+  width: 14px;
+  height: 14px;
+}
+
+.wifi-size-small {
+  width: 6px;
+  height: 6px;
+}
+
+/* Distance ring icon */
+.wifi-ring {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #666;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+/* ===========================
+   WIFI RADAR CANVAS
+   =========================== */
+
+#wifiRadar {
+  background: #000;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+/* ===========================
+   WIFI TOOLTIP
+   =========================== */
+
+#wifiTooltip {
+  position: absolute;
+  background: #111;
+  border: 1px solid #333;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 13px;
+  pointer-events: none;
+  display: none;
+  z-index: 9999;
+  white-space: nowrap;
+}
+
+/* ===========================
+   WIFI STATS PANEL
+   =========================== */
+
+#wifi-stats {
+  margin-top: 10px;
+  padding: 8px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.4em;
+}
+
+/* ===========================
+   CHANNEL NUMBER LABELS
+   =========================== */
+
+.channel-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #ccc;
+  padding: 0 4px;
+}
+/* ===========================
+   LAYOUT FIXES FOR RADAR PANELS
+   =========================== */
+
+#top-row,
+#bottom-row {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.panel {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+#bottom-row {
+  margin-top: 20px;
+}
+
+#wifiTooltip {
+  z-index: 10000;
+}
+#enlarge-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+#enlarge-content {
+    background: #111;
+    padding: 10px;
+    border: 1px solid #444;
+    max-width: 95vw;
+    max-height: 95vh;
+    overflow: auto;
+}
+

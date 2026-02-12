@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>RF Command Center</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <h1>SILVER RF COMMAND CENTER</h1>
+
+  <div id="top-row">
+
+    <!-- FPS PANEL -->
+    <div class="panel" id="fps-panel">
+      <h2>Frame Rate</h2>
+      <div id="fps-value">0</div>
+
+      <!-- SESSION INFO (STEP 2) -->
+      <div id="session-start"></div>
+      <div id="session-elapsed"></div>
+    </div>
+
+
+    <!-- CHANNEL OCCUPANCY -->
+    <div class="panel" id="channel-panel">
+      <h2>Channel Occupancy</h2>
+      <canvas id="channelChart"></canvas>
+
+      <!-- WIFI STATS PANEL -->
+      <div id="wifi-stats"></div>
+    </div>
+
+    <!-- BLE RADAR PANEL -->
+    <div class="panel" id="ble-panel">
+      <h2>BLE Radar</h2>
+      <canvas id="bleRadar"></canvas>
+
+      <!-- BLE RADAR KEY -->
+      <div class="ble-key" id="bleKey-panel">
+
+        <div class="ble-key-title">BLE Radar Key</div>
+
+        <div class="ble-key-item">
+          <span class="ble-dot" style="background: green;"></span>
+          Approaching
+        </div>
+
+        <div class="ble-key-item">
+          <span class="ble-dot" style="background: red;"></span>
+          Departing
+        </div>
+
+        <div class="ble-key-item">
+          <span class="ble-dot" style="background: yellow;"></span>
+          Steady
+        </div>
+
+        <div class="ble-key-item">
+          <span class="ble-dot" style="background: gray;"></span>
+          Unknown
+        </div>
+
+        <div class="ble-key-spacer"></div>
+
+        <div class="ble-key-item">
+          <span class="ble-size-dot ble-size-large"></span>
+          Close (large dot)
+        </div>
+
+        <div class="ble-key-item">
+          <span class="ble-size-dot ble-size-small"></span>
+          Far (small dot)
+        </div>
+
+        <div class="ble-key-spacer"></div>
+
+        <div class="ble-key-item">
+          <span class="ble-ring"></span>
+          Distance Rings:
+        </div>
+
+        <div class="ble-key-subtext">
+          • Inner ≈ 0–2m<br>
+          • Middle ≈ 2–5m<br>
+          • Outer ≈ 5–10m+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- WIFI RADAR PANEL -->
+    <div class="panel" id="wifi-panel">
+      <h2>WiFi Radar</h2>
+      <canvas id="wifiRadar" width="300" height="300"></canvas>
+
+      <!-- WIFI RADAR KEY -->
+      <div class="wifi-key">
+
+        <div class="wifi-key-title">WiFi Radar Key</div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-dot" style="background: #00ff00;"></span>
+          Approaching
+        </div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-dot" style="background: #ff66cc;"></span>
+          Departing
+        </div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-dot" style="background: #aa66ff;"></span>
+          Unknown
+        </div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-dot" style="background: #888888;"></span>
+          Steady
+        </div>
+
+        <div class="wifi-key-spacer"></div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-size-dot wifi-size-large"></span>
+          Close (large dot)
+        </div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-size-dot wifi-size-small"></span>
+          Far (small dot)
+        </div>
+
+        <div class="wifi-key-spacer"></div>
+
+        <div class="wifi-key-item">
+          <span class="wifi-ring"></span>
+          Distance Rings:
+        </div>
+
+        <div class="wifi-key-subtext">
+          • Inner ≈ 0–2m<br>
+          • Middle ≈ 2–5m<br>
+          • Outer ≈ 5–10m+
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div id="bottom-row">
+
+    <!-- RSSI WATERFALL -->
+    <div class="panel" id="waterfall-panel">
+      <h2>RSSI Waterfall</h2>
+      <canvas id="waterfall"></canvas>
+    </div>
+
+    <!-- BSSID ACTIVITY -->
+    <div class="panel" id="bssid-panel">
+      <h2>BSSID Activity</h2>
+      <table id="bssidTable">
+        <thead>
+          <tr>
+            <th>BSSID</th>
+            <th>SSID</th>
+            <th>RSSI</th>
+            <th>Channel</th>
+            <th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- TOOLTIP ELEMENTS -->
+  <div id="bleTooltip"></div>
+  <div id="wifiTooltip"></div>
+  <div id="enlarge-modal">
+  <div id="enlarge-content"></div>
+</div>
+
+  <script src="dashboard.js"></script>
+
+</body>
+</html>
+

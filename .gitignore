@@ -1,0 +1,34 @@
+# Python environments
+venv/
+.env/
+__pycache__/
+*.pyc
+
+# Logs and runtime output
+logs/
+*.log
+
+# Data captures (BLE/WiFi)
+*.parquet
+
+# Jupyter notebooks (optional)
+analysis.ipynb
+
+# Temporary or debug artifacts
+base64/
+json/
+serial/
+WEBSOCKET GLOBAL STATE.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+.vscode/
+.idea/
+
+# Node/web build junk (if dashboard ever uses bundlers)
+node_modules/
+dist/
+build/
