@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Silver Sniffer Analytics</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body {
+      background: #050505;
+    }
+    .analytics-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .analytics-panel {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 10px;
+      width: 480px;
+    }
+    canvas {
+      background: #000;
+      border: 1px solid #333;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Silver Sniffer Analytics</h1>
+
+  <div class="analytics-row">
+    <div class="analytics-panel">
+      <h2>WiFi Timeline</h2>
+      <canvas id="wifiTimeline"></canvas>
+    </div>
+    
+    <div class="analytics-panel">
+      <h2>BLE Timeline</h2>
+      <canvas id="bleTimeline"></canvas>
+    </div>
+
+    <div class="analytics-panel">
+      <h2>WiFi Channel Heatmap</h2>
+      <canvas id="wifiHeatmap"></canvas>
+    </div>
+  </div>
+
+  <h2 style="color:#ccc; margin-top:20px;">Convoy Detection</h2>
+
+  <div style="margin-bottom:10px;">
+    <label for="convoyBucket" style="color:#ccc;">Bucket Size:</label>
+    <select id="convoyBucket">
+      <option value="30">30s</option>
+      <option value="60">60s</option>
+      <option value="120">2 min</option>
+      <option value="300">5 min</option>
+    </select>
+  </div>
+
+  <pre id="convoyOutput" 
+       style="background:#111; color:#ccc; padding:10px; border:1px solid #333; height:200px; overflow-y:auto;">
+  Loading convoys…
+  </pre>
+
+  
+  <div style="margin-bottom: 10px;">
+  <label for="timeWindow" style="color:#ccc;">Time Window:</label>
+    <select id="timeWindow">
+      <option value="3600">Last Hour</option>
+      <option value="21600">Last 6 Hours</option>
+      <option value="43200">Last 12 Hours</option>
+      <option value="86400">Last 24 Hours</option>
+      <option value="259200">Last 3 Days</option>
+      <option value="604800">Last Week</option>
+      <option value="2592000">Last Month</option>
+    </select>
+  </div>
+
+  <!-- Chart.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="analytics.js"></script>
+</body>
+</html>
