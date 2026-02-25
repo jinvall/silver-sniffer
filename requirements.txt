@@ -1,0 +1,11 @@
+# Minimal runtime dependencies for Silver Sniffer (Python backend)
+pyarrow>=8.0.0
+pyserial>=3.5
+scapy>=2.4.5
+bleak>=0.22.0
+websockets>=10.4
+polars>=0.16.0
+numpy>=1.23
+matplotlib>=3.5
+opencv-python-headless>=4.5
+pytest>=7.0  # required for running unit tests

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Silver Sniffer ingest service — read ESP32 serial + BLE → websocket + Parquet.
-
-Usage: python ingest.py [--serial /dev/ttyUSB0] [--baud 115200] [--no-ble] [-v]
-"""
 import json
 import base64
 import serial
@@ -15,11 +11,16 @@ from datetime import datetime, UTC
 from bleak import BleakScanner
 from collections import defaultdict
 import time
-import argparse
-import logging
-import signal
-import sys
+from tracking_engine import TrackingEngine
+from behavior_engine import BehaviorEngine
+from classifier_engine import Classifier
+from visualizer import LiveMap
 
+
+vis = LiveMap()
+behavior = BehaviorEngine()
+classifier = Classifier()
+tracker = TrackingEngine()
 
 timestamp = datetime.now(UTC)
 SERIAL_PORT = "/dev/ttyUSB0"
@@ -73,7 +74,7 @@ def normalize_row(row, schema):
             normalized[name] = row[name]
         else:
             if pa.types.is_timestamp(field.type):
-                normalized[name] = datetime.now(UTC)
+                normalized[name] = datetime.utcnow()
             elif pa.types.is_integer(field.type):
                 normalized[name] = 0
             else:
@@ -113,14 +114,16 @@ async def ingest_loop():
                 xonxoff=False,
                 write_timeout=1,
             )
-            logging.info("Serial port opened, listening on %s @ %d", SERIAL_PORT, BAUD)
+
+            print("Serial port opened, listening...")
+
             loop = asyncio.get_running_loop()
 
             while True:
                 try:
                     raw = await loop.run_in_executor(None, ser.readline)
                 except serial.SerialException:
-                    logging.warning("Serial read error, reconnecting...")
+                    print("Serial read error, breaking to reconnect...")
                     break
 
                 if not raw:
@@ -135,12 +138,11 @@ async def ingest_loop():
                 except Exception:
                     continue
 
-                # handle BLE frames from the ESP32 before broadcasting
+                # handle ESP32-sourced BLE packet with enriched metrics
                 if obj.get("type") == "ble":
                     addr = obj.get("addr", "")
                     rssi = obj.get("rssi", 0)
 
-                    # enrich object with the same distance/movement logic
                     dist, mov, col = compute_ble_metrics(addr, rssi)
                     obj["distance_m"] = dist
                     obj["movement"] = mov
@@ -172,8 +174,7 @@ async def ingest_loop():
 
                     continue
 
-                # for non-BLE frames we still broadcast early so analytics can
-                # pick them up quickly
+                # non-BLE frames still get broadcast early
                 await broadcast(obj)
 
                 HISTORY["wifi"].append({
@@ -220,13 +221,38 @@ async def ingest_loop():
                 channel = obj.get("channel", 0)
                 src_mac = mac(dot11.addr2)
 
-                movement_msg = update_wifi_movement(src_mac, rssi, ts_us)
+                if not src_mac:
+                    continue
+
+                track = tracker.update(src_mac, rssi, ts_us / 1_000_000)
+                metrics = behavior.update(
+                    src_mac, rssi, channel, ts_us / 1_000_000
+                )
+                cls = classifier.classify(metrics)
+
+                await broadcast({
+                    "type": "device_behavior",
+                    **metrics,
+                })
+
+                await broadcast({
+                    "type": "device_class",
+                    "mac": src_mac,
+                    **cls,
+                })
+
+                await broadcast({
+                    "type": "wifi_motion",
+                    **track,
+                })
+
+                print(src_mac, cls["class"], metrics.get("rate"))
+
                 fp_msg = update_wifi_fingerprint(src_mac, rssi, channel)
                 class_msg = classify_wifi_device(fp_msg)
                 timeline_msg = update_wifi_timeline(ts_us)
                 heatmap_msg = update_wifi_heatmap(channel, ts_us)
 
-                await broadcast(movement_msg)
                 await broadcast(fp_msg)
                 await broadcast(class_msg)
                 await broadcast(timeline_msg)
@@ -240,7 +266,7 @@ async def ingest_loop():
                     wifi_rows = []
 
         except serial.SerialException:
-            logging.warning("Serial port unavailable (%s), retrying in 1s...", SERIAL_PORT)
+            print("Serial port unavailable, retrying in 1s...")
 
         # Sleep before retrying to open the port
         await asyncio.sleep(1)
@@ -251,16 +277,9 @@ ble_last_distance = {}
 
 
 def compute_ble_metrics(addr, rssi):
-    """Estimate distance and movement for a BLE advertisement.
-
-    Returns a tuple (distance_m, movement, color) and updates
-    :data:`ble_last_distance` state.  The algorithm mirrors the logic
-    previously duplicated in ``ble_loop`` so both local scanning and
-    ESP32-sourced BLE frames behave the same way.
-    """
-    # simple log-distance path loss model
-    P0 = -59  # RSSI at 1m (typical BLE)
-    N = 2.0   # path loss exponent
+    # reuse same model as ingest.py
+    P0 = -59
+    N = 2.0
     distance_m = 10 ** ((P0 - rssi) / (10 * N))
 
     prev = ble_last_distance.get(addr)
@@ -274,14 +293,12 @@ def compute_ble_metrics(addr, rssi):
         movement = "steady"
 
     ble_last_distance[addr] = distance_m
-
     color = {
         "approach": "green",
         "depart": "red",
         "steady": "yellow",
         "unknown": "gray",
     }[movement]
-
     return distance_m, movement, color
 
 
@@ -418,67 +435,14 @@ async def ble_loop():
         await asyncio.sleep(1.0)
 
 
-async def _run(no_ble=False, video_sources=None, px_to_m=0.01):
-    """Start websocket server and ingestion tasks.
-
-    Set `no_ble=True` to disable local BLE scanning (useful in headless environments).
-    If `video_sources` is provided (list), start CPU-based video trackers.
-    """
+async def main():
     await start_server()
-    tasks = [asyncio.create_task(ingest_loop())]
-    if not no_ble:
-        tasks.append(asyncio.create_task(ble_loop()))
-
-    if video_sources:
-        from video_tracker import start_video_sources
-        tasks.append(asyncio.create_task(start_video_sources(video_sources, px_to_m=px_to_m)))
-
-    try:
-        await asyncio.gather(*tasks)
-    except asyncio.CancelledError:
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-
-def main():
-    global SERIAL_PORT, BAUD, PARQUET_WIFI, PARQUET_BLE
-    parser = argparse.ArgumentParser(description="Ingest serial + BLE → websocket + Parquet")
-    parser.add_argument("--serial", default=SERIAL_PORT, help="Serial port for ESP32 (default: %(default)s)")
-    parser.add_argument("--baud", type=int, default=BAUD, help="Serial baud rate")
-    parser.add_argument("--parquet-wifi", dest="parquet_wifi", default=PARQUET_WIFI, help="WiFi Parquet root")
-    parser.add_argument("--parquet-ble", dest="parquet_ble", default=PARQUET_BLE, help="BLE Parquet root")
-    parser.add_argument("--no-ble", action="store_true", help="Disable local BLE scanning")
-    parser.add_argument("--video-sources", default=None, help="Comma-separated list of video sources (rtsp://, http(s) .m3u8, or camera index). Example: --video-sources rtsp://...,0")
-    parser.add_argument("--px-to-m", type=float, default=0.01, help="Pixels-to-meters scale for video tracks (approx)")
-    parser.add_argument("-v","--verbose", action="store_true", help="Verbose logging")
-    args = parser.parse_args()
-
-    SERIAL_PORT = args.serial
-    BAUD = args.baud
-    PARQUET_WIFI = args.parquet_wifi
-    PARQUET_BLE = args.parquet_ble
-
-    video_sources = None
-    if args.video_sources:
-        parts = [s.strip() for s in args.video_sources.split(',') if s.strip()]
-        parsed = []
-        for p in parts:
-            try:
-                parsed.append(int(p))
-            except Exception:
-                parsed.append(p)
-        video_sources = parsed
-
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
-
-    try:
-        asyncio.run(_run(no_ble=args.no_ble, video_sources=video_sources, px_to_m=args.px_to_m))
-    except KeyboardInterrupt:
-        logging.info("Interrupted — shutting down")
+    await asyncio.gather(
+        ingest_loop(),
+        ble_loop(),
+    )
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 

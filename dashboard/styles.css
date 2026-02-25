@@ -252,6 +252,33 @@ th {
   line-height: 1.4em;
 }
 
+/* BSSID list MUST match waterfall height and be scrollable */
+.bssid-list {
+  max-height: 300px; /* matches waterfall canvas height */
+  overflow-y: auto;
+  margin-top: 6px;
+  border-top: 1px solid #222;
+  padding-top: 6px;
+}
+
+/* small popup for radar actions (pin / block / unblock) */
+#radarActionPopup.popup {
+  position: absolute;
+  background: #111;
+  border: 1px solid #444;
+  padding: 8px;
+  border-radius: 6px;
+  color: #ccc;
+  z-index: 10001;
+  min-width: 180px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+}
+
+/* make panels hint they are clickable/enlargeable */
+.panel { cursor: default; }
+.panel:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+
+
 /* ===========================
    CHANNEL NUMBER LABELS
    =========================== */
@@ -286,6 +313,30 @@ th {
 #wifiTooltip {
   z-index: 10000;
 }
+
+/* ---------- Sidebar for analytics controls ---------- */
+#sidebar {
+  position: fixed;
+  right: 12px;
+  top: 100px;
+  width: 260px;
+  background: #111;
+  border: 1px solid #333;
+  padding: 12px;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 13px;
+  z-index: 1100;
+}
+
+@media (max-width: 1100px) {
+  #sidebar { position: static; width: auto; margin: 12px 0; }
+}
+
+/* ---------- Camera panels / player styling ---------- */
+.camera-panel { width: 320px; display: flex; flex-direction: column; gap: 6px; }
+.camera-video { width: 100%; height: 180px; background: #000; border-radius: 4px; border:1px solid #333; }
+
 #enlarge-modal {
     position: fixed;
     top: 0;
@@ -300,11 +351,23 @@ th {
 }
 
 #enlarge-content {
+    position: relative;
     background: #111;
     padding: 10px;
     border: 1px solid #444;
     max-width: 95vw;
     max-height: 95vh;
     overflow: auto;
+}
+
+/* When a panel is moved into the enlarge modal make it large and let canvases expand */
+#enlarge-content .panel.enlarged {
+  width: min(95vw, 1100px) !important;
+  height: auto !important;
+}
+#enlarge-content .panel.enlarged canvas {
+  width: 100% !important;
+  height: auto !important;
+  display: block;
 }
 

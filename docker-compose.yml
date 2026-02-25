@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  silver-sniffer:
+    build: .
+    container_name: silver-sniffer
+    ports:
+      - "8000:8000"   # dashboard
+      - "8090:8090"   # analytics REST
+      - "8765:8765"   # websocket
+    volumes:
+      - ./wifi_capture.parquet:/app/wifi_capture.parquet
+      - ./ble_capture.parquet:/app/ble_capture.parquet
+      - ./dashboard:/app/dashboard:ro
+    environment:
+      - NO_BLE=1
+    # To expose a serial device into the container, add a devices mapping (optional):
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    restart: unless-stopped
+    command: ["python", "run_all.py", "--no-ble"]

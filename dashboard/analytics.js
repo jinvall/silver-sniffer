@@ -25,9 +25,11 @@ function getTimeWindow() {
 
 async function buildWifiTimeline() {
     const data = await fetchJSON(`/analytics/wifi_timeline?bucket=5&since=${getTimeWindow()}`);
+    data.buckets.sort((a, b) => a.start_ts - b.start_ts);
     const labels = data.buckets.map(b => tsToLabel(b.start_ts));
     const counts = data.buckets.map(b => b.count);
-
+    const bssidLists = data.buckets.map(b => b.bssids || []);
+    
     const ctx = document.getElementById("wifiTimeline").getContext("2d");
    if (wifiChart) wifiChart.destroy();
     wifiChart = new Chart(ctx, {
@@ -36,7 +38,7 @@ async function buildWifiTimeline() {
         data: {
             labels,
             datasets: [{
-                label: "WiFi frames / 5s",
+                label: `unique WiFi devices / ${data.bucket_seconds}s`,
                 data: counts,
                 borderColor: "#66ccff",
                 backgroundColor: "rgba(102,204,255,0.2)",
@@ -49,7 +51,19 @@ async function buildWifiTimeline() {
                 y: { ticks: { color: "#ccc" } }
             },
             plugins: {
-                legend: { labels: { color: "#ccc" } }
+                legend: { labels: { color: "#ccc" } },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: (context) => {
+                            const idx = context.dataIndex;
+                            const list = bssidLists[idx];
+                            if (list && list.length) {
+                                return 'BSSIDs: ' + list.join(', ');
+                            }
+                            return '';
+                        }
+                    }
+                }
             }
         }
     });
@@ -57,6 +71,7 @@ async function buildWifiTimeline() {
 
 async function buildBleTimeline() {
     const data = await fetchJSON(`/analytics/ble_timeline?bucket=5&since=${getTimeWindow()}`);
+    data.buckets.sort((a, b) => a.start_ts - b.start_ts);
     const labels = data.buckets.map(b => tsToLabel(b.start_ts));
     const counts = data.buckets.map(b => b.count);
 
@@ -89,7 +104,7 @@ async function buildBleTimeline() {
 async function buildWifiHeatmap() {
     const data = await fetchJSON(`/analytics/wifi_heatmap?bucket=30&since=${getTimeWindow()}`);
     const cells = data.cells;
-
+    cells.sort((a, b) => a.start_ts - b.start_ts);
     if (!cells.length) return;
 
     const buckets = [...new Set(cells.map(c => c.start_ts))].sort((a,b) => a - b);
@@ -190,10 +205,12 @@ async function buildConvoys() {
         out.textContent = text;
 
     } catch (e) {
-        out.textContent = "Convoy error: " + e;
+        out.textContent = "Convoy error: " + e + " — is analytics_server running? Click 'Refresh convoys'.";
         console.error("Convoy error:", e);
     }
 }
+
+document.getElementById('convoy-refresh')?.addEventListener('click', buildConvoys);
 
 (async function main() {
     try {
@@ -222,6 +239,33 @@ async function buildConvoys() {
 
 
 })();
-document.getElementById("timeWindow").addEventListener("change", main);
+
+document.getElementById("timeWindow").addEventListener("change", () => {
+    buildWifiTimeline();
+    buildBleTimeline();
+    buildWifiHeatmap();
+    buildConvoys();
+});
+
 document.getElementById("convoyBucket").addEventListener("change", buildConvoys);
+
+// Auto-refresh support (controlled from the sidebar)
+let __analyticsRefreshTimer = null;
+function updateAutoRefresh() {
+    const enabled = document.getElementById('analytics-autorefresh')?.checked;
+    const interval = parseInt(document.getElementById('analytics-refresh-interval')?.value || '30', 10) * 1000;
+    if (__analyticsRefreshTimer) {
+        clearInterval(__analyticsRefreshTimer);
+        __analyticsRefreshTimer = null;
+    }
+    if (enabled) {
+        __analyticsRefreshTimer = setInterval(() => { main(); }, interval);
+    }
+}
+
+document.getElementById('analytics-autorefresh')?.addEventListener('change', updateAutoRefresh);
+document.getElementById('analytics-refresh-interval')?.addEventListener('change', updateAutoRefresh);
+
+// start with whatever the control says
+updateAutoRefresh();
 

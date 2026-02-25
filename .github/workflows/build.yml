@@ -41,6 +41,9 @@ jobs:
       - name: Lint / Syntax Check
         run: |
           python -m py_compile $(git ls-files '*.py')
+      - name: Run unit tests
+        run: |
+          PYTHONPATH=. pytest -q
 
   dashboard-build:
     name: Dashboard Build

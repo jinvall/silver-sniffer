@@ -1,0 +1,17 @@
+[Unit]
+Description=Silver Sniffer (ingest + websocket + analytics + dashboard)
+After=network.target
+
+[Service]
+Type=simple
+# EDIT THESE TWO LINES for your installation path / user
+User=youruser
+WorkingDirectory=/home/youruser/silver-sniffer
+ExecStart=/home/youruser/silver-sniffer/venv/bin/python /home/youruser/silver-sniffer/run_all.py --no-ble
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -9,12 +9,62 @@
 
   <h1>BLE and WiFi Sniff and Prox</h1>
 
+  <!-- Right-hand analytics sidebar -->
+  <aside id="sidebar">
+    <h3>Analytics Controls</h3>
+
+    <div style="margin-bottom:8px; color:#ccc; font-size:13px;">
+      <label><input type="checkbox" id="analytics-autorefresh"> Auto-refresh</label>
+      <br>
+      <label for="analytics-refresh-interval" style="color:#ccc;">Interval:</label>
+      <select id="analytics-refresh-interval">
+        <option value="10">10s</option>
+        <option value="30" selected>30s</option>
+        <option value="60">60s</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:8px; color:#ccc; font-size:13px;">
+      <label for="timeWindow" style="color:#ccc;">Time Window:</label>
+      <select id="timeWindow">
+        <option value="3600">Last Hour</option>
+        <option value="21600">Last 6 Hours</option>
+        <option value="43200">Last 12 Hours</option>
+        <option value="86400" selected>Last 24 Hours</option>
+        <option value="259200">Last 3 Days</option>
+        <option value="604800">Last Week</option>
+        <option value="2592000">Last Month</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:8px; color:#ccc; font-size:13px;">
+      <label for="convoyBucket" style="color:#ccc;">Convoy bucket:</label>
+      <select id="convoyBucket">
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+        <option value="120">2 min</option>
+        <option value="300">5 min</option>
+      </select>
+    </div>
+
+    <div style="margin-top:8px; color:#ccc; font-size:13px;">
+      <div>Status:</div>
+      <div id="analytics-status">analytics: unknown</div>
+      <div id="ws-status">ws: unknown</div>
+    </div>
+
+    <hr style="border-color:#222; margin:12px 0;">
+    <div style="color:#ccc; font-size:13px;">RTSP streams must be proxied for browser playback. Use HLS or a WebSocket (jsmpeg) proxy — sample commands shown when you enter an RTSP URL below.</div>
+  </aside>
+
   <div id="top-row">
 
     <!-- FPS PANEL -->
     <div class="panel" id="fps-panel">
       <h2>Frame Rate</h2>
       <div id="fps-value">0</div>
+      <div id="report-output" style="margin-top:8px; font-size:12px; color:#ccc;"></div>
+
 
       <!-- SESSION INFO (STEP 2) -->
       <div id="session-start"></div>
@@ -147,6 +197,25 @@
       </div>
     </div>
 
+    <!-- CAMERA PANELS -->
+    <div class="panel camera-panel" id="camera1-panel">
+      <h2>Camera 1</h2>
+      <input id="camera1-url" placeholder="ws://... or http(s) .m3u8 or rtsp://..." style="width:100%; box-sizing:border-box; margin-bottom:6px;" />
+      <div style="display:flex; gap:6px; margin-bottom:6px;"><button id="camera1-connect">Connect</button><button id="camera1-disconnect">Disconnect</button></div>
+      <video id="camera1-video" class="camera-video" autoplay muted playsinline></video>
+      <canvas id="camera1-canvas" style="display:none;"></canvas>
+      <pre id="camera1-ffmpeg" style="display:none; background:#111; color:#ccc; padding:8px; border-radius:4px;"></pre>
+    </div>
+
+    <div class="panel camera-panel" id="camera2-panel">
+      <h2>Camera 2</h2>
+      <input id="camera2-url" placeholder="ws://... or http(s) .m3u8 or rtsp://..." style="width:100%; box-sizing:border-box; margin-bottom:6px;" />
+      <div style="display:flex; gap:6px; margin-bottom:6px;"><button id="camera2-connect">Connect</button><button id="camera2-disconnect">Disconnect</button></div>
+      <video id="camera2-video" class="camera-video" autoplay muted playsinline></video>
+      <canvas id="camera2-canvas" style="display:none;"></canvas>
+      <pre id="camera2-ffmpeg" style="display:none; background:#111; color:#ccc; padding:8px; border-radius:4px;"></pre>
+    </div>
+
   </div>
 
   <div id="bottom-row">
@@ -160,6 +229,7 @@
     <!-- BSSID ACTIVITY -->
     <div class="panel" id="bssid-panel">
       <h2>BSSID Activity</h2>
+      <div class="bssid-list">
       <table id="bssidTable">
         <thead>
           <tr>
@@ -172,6 +242,7 @@
         </thead>
         <tbody></tbody>
       </table>
+      </div>
     </div>
 
   </div>
@@ -179,9 +250,55 @@
   <!-- TOOLTIP ELEMENTS -->
   <div id="bleTooltip"></div>
   <div id="wifiTooltip"></div>
+  <div id="radarActionPopup" class="popup" style="display:none;"></div>
   <div id="enlarge-modal">
   <div id="enlarge-content"></div>
 </div>
+
+  <!-- ANALYTICS (merged into main page) -->
+  <hr style="border-color:#222; margin:24px 0;">
+  <h2 style="color:#ccc; text-align:center; margin-top:0;">Analytics</h2>
+
+  <div class="analytics-row" style="display:flex; flex-wrap:wrap; gap:12px; justify-content:center;">
+    <div class="panel" style="width:480px;">
+      <h2>WiFi Timeline</h2>
+      <canvas id="wifiTimeline"></canvas>
+    </div>
+
+    <div class="panel" style="width:480px;">
+      <h2>BLE Timeline</h2>
+      <canvas id="bleTimeline"></canvas>
+    </div>
+
+    <div class="panel" style="width:480px;">
+      <h2>WiFi Channel Heatmap</h2>
+      <canvas id="wifiHeatmap"></canvas>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top:12px;">
+    <div class="panel" style="width:480px;">
+      <h2>Convoy Detection</h2>
+      <div style="color:#999; margin-bottom:8px;">Use the sidebar controls to change the convoy bucket and time window.</div>
+      <div><button id="convoy-refresh">Refresh convoys</button></div> 
+
+      <pre id="convoyOutput" style="background:#111; color:#ccc; padding:10px; border:1px solid #333; height:200px; overflow-y:auto;">Loading convoys…</pre>
+    </div>
+
+    <div class="panel" style="width:320px;">
+      <h2>Analytics Controls</h2>
+      <div id="analytics-controls" style="color:#ccc; font-size:13px;">
+        • Data source: `analytics_server.py` (Parquet REST on port 8090)
+        <br>• Live feed: WebSocket (ws://localhost:8765)
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart.js + analytics client (merge analytics.html into index) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.3.5"></script>
+  <script src="https://unpkg.com/jsmpeg@0.2.1/jsmpeg.min.js"></script>
+  <script src="analytics.js"></script>
 
   <script src="dashboard.js"></script>
 

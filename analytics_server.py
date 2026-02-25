@@ -3,6 +3,8 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
+import socket
+import urllib.request
 
 import pyarrow.dataset as ds
 import pyarrow.compute as pc
@@ -22,6 +24,32 @@ MAX_CONVOY_DEVICES = 200
 MIN_BUCKETS_FOR_DEVICE = 3
 MIN_JACCARD = 0.3
 MAX_CONVOYS = 20
+
+# persisted list of blocked devices (used to filter 'junk' from convoys / UI)
+BLOCKED_JSON = "blocked_devices.json"
+blocked_set = set()
+
+def load_blocked():
+    global blocked_set
+    try:
+        if os.path.exists(BLOCKED_JSON):
+            with open(BLOCKED_JSON, 'r') as f:
+                arr = json.load(f)
+                blocked_set = set(arr or [])
+        else:
+            blocked_set = set()
+    except Exception:
+        blocked_set = set()
+
+def save_blocked():
+    try:
+        with open(BLOCKED_JSON, 'w') as f:
+            json.dump(sorted(list(blocked_set)), f)
+    except Exception:
+        pass
+
+# attempt load at import time (best-effort)
+load_blocked()
 
 
 # -------------------------------------------------------------------
@@ -109,25 +137,42 @@ def wifi_timeline(qs, bucket_seconds=5):
     bucket = bucketize_timestamp(table, bucket_seconds)
     table = table.append_column("bucket", bucket)
 
+    # build a mapping from bucket -> set(bssid) to allow tooltip info
+    bucket_map = {}
+    bssid_col = table["bssid"]
+    bucket_col = table["bucket"]
+    for bb, b in zip(bssid_col, bucket_col):
+        if not bb.is_valid or not b.is_valid:
+            continue
+        buck = int(b.as_py())
+        bucket_map.setdefault(buck, set()).add(bb.as_py())
+
+    # count distinct BSSIDs per bucket (see comment earlier)
     grouped = table.group_by("bucket").aggregate(
         [
-            ("bssid", "count"),
+            ("bssid", "count_distinct"),
             ("rssi", "mean"),
         ]
     )
 
     buckets = []
-    for b, count, avg_rssi in zip(
-        grouped["bucket"], grouped["bssid_count"], grouped["rssi_mean"]
+    for b, uniq, avg_rssi in zip(
+        grouped["bucket"], grouped["bssid_count_distinct"], grouped["rssi_mean"]
     ):
+        buck = int(b.as_py())
         buckets.append(
             {
-                "bucket": int(b.as_py()),
-                "start_ts": int(b.as_py() * bucket_seconds),
-                "count": int(count.as_py()),
+                "bucket": buck,
+                "start_ts": int(buck * bucket_seconds),
+                "count": int(uniq.as_py()),
                 "avg_rssi": float(avg_rssi.as_py()) if avg_rssi.is_valid else None,
+                # include list of bssids for hover tooltips
+                "bssids": sorted(bucket_map.get(buck, [])),
             }
         )
+
+    # server-side: ensure chronological order before returning (clients may rely on this)
+    buckets.sort(key=lambda x: x["start_ts"])
 
     if len(buckets) > MAX_TIMELINE_BUCKETS:
         buckets = buckets[-MAX_TIMELINE_BUCKETS:]
@@ -168,6 +213,9 @@ def wifi_channel_heatmap(qs, bucket_seconds=30):
                 "count": int(count.as_py()),
             }
         )
+
+    # ensure consistent ordering: primary by time, then by channel
+    cells.sort(key=lambda c: (c["start_ts"], c["channel"]))
 
     if len(cells) > MAX_HEATMAP_CELLS:
         cells = cells[-MAX_HEATMAP_CELLS:]
@@ -275,7 +323,7 @@ def convoy_detection(qs, bucket_seconds=30):
     devices = [
         (dev, buckets)
         for dev, buckets in presence.items()
-        if len(buckets) >= MIN_BUCKETS_FOR_DEVICE
+        if len(buckets) >= MIN_BUCKETS_FOR_DEVICE and dev not in blocked_set
     ]
 
     if len(devices) < 2:
@@ -310,6 +358,44 @@ def convoy_detection(qs, bucket_seconds=30):
     convoys = convoys[:MAX_CONVOYS]
 
     return {"convoys": convoys, "bucket_seconds": bucket_seconds}
+
+
+# -------------------------------------------------------------------
+# HEALTH CHECK (used by /health endpoint)
+# -------------------------------------------------------------------
+def health_status(ws_host='127.0.0.1', ws_port=8765, dashboard_url='http://127.0.0.1:8000'):
+    """Return a small health summary for the running environment.
+    - quick TCP connect to websocket port
+    - try a HEAD/GET to dashboard URL
+    - check presence of parquet files
+    """
+    status = {
+        'analytics': True,
+        'parquet': {
+            'wifi_exists': os.path.exists(WIFI_PARQUET),
+            'ble_exists': os.path.exists(BLE_PARQUET),
+        },
+        'ws': False,
+        'dashboard': False,
+        'blocked_count': len(blocked_set) if 'blocked_set' in globals() else 0,
+    }
+
+    # quick TCP check for websocket port (non-blocking, short timeout)
+    try:
+        with socket.create_connection((ws_host, int(ws_port)), timeout=0.4):
+            status['ws'] = True
+    except Exception:
+        status['ws'] = False
+
+    # quick HTTP probe for dashboard (if present)
+    try:
+        req = urllib.request.Request(dashboard_url, method='HEAD')
+        with urllib.request.urlopen(req, timeout=0.6) as r:
+            status['dashboard'] = r.status == 200
+    except Exception:
+        status['dashboard'] = False
+
+    return status
 
 
 # -------------------------------------------------------------------
@@ -348,6 +434,10 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
             except Exception:
                 return default
 
+        # lightweight health probe (aggregates dashboard/ws/parquet status)
+        if path == "/health":
+            return self._json(health_status())
+
         if path == "/analytics/wifi_timeline":
             bucket = get_int("bucket", 5)
             return self._json(wifi_timeline(qs, bucket))
@@ -363,6 +453,43 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
         if path == "/analytics/convoys":
             bucket = get_int("bucket", 30)
             return self._json(convoy_detection(qs, bucket))
+
+        if path == "/analytics/blocked":
+            return self._json({"blocked": sorted(list(blocked_set))})
+
+        self._json({"error": "not found"}, code=404)
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/analytics/blocked":
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length) if length else b''
+                j = json.loads(body.decode('utf-8') or '{}')
+                device = j.get('device')
+                if device:
+                    blocked_set.add(device)
+                    save_blocked()
+                    return self._json({"blocked": sorted(list(blocked_set))})
+                return self._json({"error": "missing 'device'"}, code=400)
+            except Exception as e:
+                return self._json({"error": "bad request", "detail": str(e)}, code=400)
+
+        self._json({"error": "not found"}, code=404)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+
+        if path == "/analytics/blocked":
+            device = qs.get('device', [None])[0]
+            if device and device in blocked_set:
+                blocked_set.remove(device)
+                save_blocked()
+            return self._json({"blocked": sorted(list(blocked_set))})
 
         self._json({"error": "not found"}, code=404)
 
