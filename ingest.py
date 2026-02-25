@@ -20,7 +20,7 @@ import logging
 import signal
 import sys
 
-
+UTC = timezone.utc
 timestamp = datetime.now(UTC)
 SERIAL_PORT = "/dev/ttyUSB0"
 BAUD = 115200
