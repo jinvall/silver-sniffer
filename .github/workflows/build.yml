@@ -7,27 +7,26 @@ on:
 
 jobs:
 
-	esp-idf-build:
-		name: ESP-IDF Firmware Build
-		  runs-on: ubuntu-latest
-		  steps:
-		    - name: Checkout
-		      uses: actions/checkout@v4
-	
-		    - name: Install ESP-IDF
-		      uses: espressif/esp-idf-ci-action@v1
-		      with:
-		        esp_idf_version: v5.2
-		        docker_pull: true
-	
-		    - name: Clean build
-		      working-directory: rf_scout_wifi
-		      run: idf.py fullclean
+  esp-idf-build:
+    name: ESP-IDF Firmware Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-		    - name: Build firmware
-		      working-directory: rf_scout_wifi
-		      run: idf.py build
+      - name: Install ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2
+          docker_pull: true
 
+      - name: Clean build
+        working-directory: rf_scout_wifi
+        run: idf.py fullclean
+
+      - name: Build firmware
+        working-directory: rf_scout_wifi
+        run: idf.py build
 
   python-backend:
     name: Python Backend Check
@@ -48,6 +47,7 @@ jobs:
       - name: Lint / Syntax Check
         run: |
           python -m py_compile $(git ls-files '*.py')
+
       - name: Run unit tests
         run: |
           PYTHONPATH=. pytest -q
@@ -73,3 +73,4 @@ jobs:
         working-directory: dashboard
         run: |
           if [ -f package.json ]; then npm run build; fi
+
