@@ -197,6 +197,27 @@ function updateWifiStatsPanel() {
     `;
 }
 
+function openSearchPage(query) {
+    if (!query || !query.trim()) {
+        return;
+    }
+    const encoded = encodeURIComponent(query.trim());
+    window.location.href = `search.html?q=${encoded}`;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('dashboardSearchInput');
+    const searchButton = document.getElementById('dashboardSearchButton');
+    if (searchButton && searchInput) {
+        searchButton.addEventListener('click', () => openSearchPage(searchInput.value));
+        searchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                openSearchPage(searchInput.value);
+            }
+        });
+    }
+});
 
 // ======================================================
 // BLE RADAR SYSTEM (FINAL, SMOOTH, COLORFUL)

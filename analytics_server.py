@@ -3,6 +3,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
+from datetime import datetime
 import socket
 import urllib.request
 import logging
@@ -394,6 +395,241 @@ def convoy_detection(qs, bucket_seconds=30):
     return {"convoys": convoys, "bucket_seconds": bucket_seconds}
 
 
+def normalize_pyarrow_value(value):
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        try:
+            return value.decode('utf-8', errors='ignore')
+        except Exception:
+            return str(value)
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    return value
+
+
+def row_matches_query(row, query, search_fields=None):
+    lower_query = query.lower()
+    fields = search_fields if search_fields is not None else row.keys()
+    for field in fields:
+        value = row.get(field)
+        if value is None:
+            continue
+        if lower_query in str(value).lower():
+            return True
+    return False
+
+
+def search_rows(table, query, search_fields=None, limit=100):
+    if table is None or table.num_rows == 0 or not query:
+        return []
+
+    rows = []
+    for i in range(table.num_rows):
+        row = {}
+        for name, col in zip(table.column_names, table.columns):
+            if col[i].is_valid:
+                row[name] = normalize_pyarrow_value(col[i].as_py())
+            else:
+                row[name] = None
+
+        if row_matches_query(row, query, search_fields):
+            rows.append(row)
+            if len(rows) >= limit:
+                break
+
+    return rows
+
+
+def top_counts(items, limit=5):
+    counts = {}
+    for item in items:
+        if item is None:
+            continue
+        counts[item] = counts.get(item, 0) + 1
+    pairs = sorted(counts.items(), key=lambda x: (-x[1], str(x[0])))
+    return [{'value': key, 'count': value} for key, value in pairs[:limit]]
+
+
+def extract_device_ids_from_rows(wifi_rows, ble_rows):
+    devices = set()
+    for row in wifi_rows:
+        if row.get('bssid'):
+            devices.add(f"wifi:{row['bssid']}")
+    for row in ble_rows:
+        if row.get('addr'):
+            devices.add(f"ble:{row['addr']}")
+    return devices
+
+
+def summarize_behavior(rows):
+    if not rows:
+        return None
+
+    candidates = []
+    for field in ['movement', 'frame_type', 'ssid', 'name']:
+        values = [row.get(field) for row in rows if row.get(field) is not None]
+        if not values:
+            continue
+        top = top_counts(values, limit=3)
+        if top:
+            primary = top[0]
+            score = round(primary['count'] / len(values), 2)
+            candidates.append({
+                'field': field,
+                'dominant': primary['value'],
+                'score': score,
+                'details': top,
+            })
+    if not candidates:
+        return None
+
+    # choose most predictive field by score, then by available count
+    candidates.sort(key=lambda c: (-c['score'], -len(c['details'])))
+    return candidates[0]
+
+
+def build_search_cooccurrence(qs, wifi_table, ble_table, query_devices, bucket_seconds=60, top_n=10):
+    if not query_devices:
+        return []
+
+    presence = {}
+
+    def merge_presence(table, id_field, prefix):
+        if table is None or table.num_rows == 0 or id_field not in table.column_names:
+            return
+        bucket = bucketize_timestamp(table, bucket_seconds)
+        table = table.append_column('bucket', bucket)
+        for identity, bucket_idx in zip(table[id_field], table['bucket']):
+            if not identity.is_valid or not bucket_idx.is_valid:
+                continue
+            dev = f"{prefix}:{identity.as_py()}"
+            buck = int(bucket_idx.as_py())
+            presence.setdefault(buck, set()).add(dev)
+
+    merge_presence(wifi_table, 'bssid', 'wifi')
+    merge_presence(ble_table, 'addr', 'ble')
+
+    if not presence:
+        return []
+
+    counts = {}
+    for devices in presence.values():
+        if not devices.intersection(query_devices):
+            continue
+        for other in devices:
+            if other in query_devices:
+                continue
+            counts[other] = counts.get(other, 0) + 1
+
+    if not counts:
+        return []
+
+    return [{'device': device, 'count': count} for device, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:top_n]]
+
+
+def build_search_convoy_info(qs, query_devices, bucket_seconds=30):
+    if not query_devices:
+        return []
+    convoys = convoy_detection(qs, bucket_seconds=bucket_seconds).get('convoys', [])
+    filtered = [c for c in convoys if any(member in query_devices for member in c.get('members', []))]
+    return filtered
+
+
+def build_search_summary(query, wifi_table, ble_table, wifi_results, ble_results, qs):
+    summary = {
+        'total_matches': len(wifi_results) + len(ble_results),
+        'query': query,
+        'seen_with': [],
+        'behavior': None,
+        'frequency_per_hour': None,
+        'duration_seconds': None,
+        'first_seen': None,
+        'last_seen': None,
+        'convoys': [],
+    }
+
+    rows = wifi_results + ble_results
+    if rows:
+        timestamps = []
+        for row in rows:
+            ts = row.get('timestamp')
+            if ts is None:
+                continue
+            if isinstance(ts, datetime):
+                timestamps.append(ts.timestamp())
+            else:
+                try:
+                    timestamps.append(float(ts))
+                except Exception:
+                    continue
+        if timestamps:
+            min_ts = min(timestamps)
+            max_ts = max(timestamps)
+            if max_ts > min_ts:
+                duration = int(max_ts - min_ts)
+                summary['duration_seconds'] = duration
+                summary['frequency_per_hour'] = round(summary['total_matches'] / duration * 3600, 2)
+            else:
+                summary['duration_seconds'] = 0
+                summary['frequency_per_hour'] = summary['total_matches']
+            summary['first_seen'] = int(min_ts)
+            summary['last_seen'] = int(max_ts)
+
+    summary['behavior'] = summarize_behavior(rows)
+    query_devices = extract_device_ids_from_rows(wifi_results, ble_results)
+    summary['seen_with'] = build_search_cooccurrence(qs, wifi_table, ble_table, query_devices, bucket_seconds=60, top_n=10)
+    summary['convoys'] = build_search_convoy_info(qs, query_devices, bucket_seconds=30)
+
+    return summary
+
+
+def search_capture(qs):
+    query = qs.get('q', [''])[0].strip()
+    if not query:
+        return {'query': '', 'wifi': {'count': 0, 'results': []}, 'ble': {'count': 0, 'results': []}, 'summary': None}
+
+    limit = 100
+    try:
+        limit = min(200, max(10, int(qs.get('limit', [100])[0])))
+    except Exception:
+        limit = 100
+
+    wifi_dset = safe_dataset(WIFI_PARQUET)
+    if wifi_dset is not None:
+        wifi_table = wifi_dset.to_table()
+        if wifi_table.num_rows > 0:
+            wifi_table, _, _ = parse_time_range(wifi_table, qs)
+        else:
+            wifi_table = None
+    else:
+        wifi_table = None
+
+    ble_dset = safe_dataset(BLE_PARQUET)
+    if ble_dset is not None:
+        ble_table = ble_dset.to_table()
+        if ble_table.num_rows > 0:
+            ble_table, _, _ = parse_time_range(ble_table, qs)
+        else:
+            ble_table = None
+    else:
+        ble_table = None
+
+    wifi_fields = [f for f in ['bssid', 'ssid', 'channel', 'rssi', 'frame_type', 'source', 'destination'] if wifi_table is not None and f in wifi_table.column_names]
+    ble_fields = [f for f in ['addr', 'name', 'movement', 'rssi', 'distance_m', 'frame_type'] if ble_table is not None and f in ble_table.column_names]
+
+    wifi_results = search_rows(wifi_table, query, search_fields=wifi_fields, limit=limit) if wifi_table is not None else []
+    ble_results = search_rows(ble_table, query, search_fields=ble_fields, limit=limit) if ble_table is not None else []
+    summary = build_search_summary(query, wifi_table, ble_table, wifi_results, ble_results, qs)
+
+    return {
+        'query': query,
+        'wifi': {'count': len(wifi_results), 'results': wifi_results},
+        'ble': {'count': len(ble_results), 'results': ble_results},
+        'summary': summary,
+    }
+
+
 # -------------------------------------------------------------------
 # HEALTH CHECK (used by /health endpoint)
 # -------------------------------------------------------------------
@@ -487,6 +723,9 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
         if path == "/analytics/convoys":
             bucket = get_int("bucket", 30)
             return self._json(convoy_detection(qs, bucket))
+
+        if path == "/analytics/search":
+            return self._json(search_capture(qs))
 
         if path == "/analytics/blocked":
             return self._json({"blocked": sorted(list(blocked_set))})
