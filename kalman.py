@@ -47,9 +47,10 @@ class Kalman2D:
         self.P = (I - K @ self.H) @ self.P
 
         return {
-            "x": float(self.x[0]),
-            "y": float(self.x[1]),
-            "vx": float(self.x[2]),
-            "vy": float(self.x[3])
+            "x": float(self.x[0].item()),
+            "y": float(self.x[1].item()),
+            "vx": float(self.x[2].item()),
+            "vy": float(self.x[3].item()),
+
         }
 
