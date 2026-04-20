@@ -114,8 +114,8 @@ Use CLI options described above.
 
 ## Testing
 
-Unit tests live under `tests/` and are executed with `PYTHONPATH=. pytest`.
-BLE-specific behavior (timeline buckets, convoy merging, movement logic) is now covered.
+Unit tests live under `tests/` and are executed with `PYTHONPATH=. pytest` (preferred) or `python -m unittest discover -v`.
+New tests include BLE distance/movement logic, WiFi movement delta checks, and analytics time bucketing.
 
 ## CI / build
 

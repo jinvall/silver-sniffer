@@ -212,33 +212,15 @@ async function buildConvoys() {
 
 document.getElementById('convoy-refresh')?.addEventListener('click', buildConvoys);
 
-(async function main() {
-    try {
-        await buildWifiTimeline();
-    } catch (e) {
-        console.error("WiFi timeline error:", e);
-    }
+async function main() {
+    try { await buildWifiTimeline(); } catch (e) { console.error("WiFi timeline error:", e); }
+    try { await buildBleTimeline(); } catch (e) { console.error("BLE timeline error:", e); }
+    try { await buildWifiHeatmap(); } catch (e) { console.error("WiFi heatmap error:", e); }
+    try { await buildConvoys(); } catch (e) { console.error("Convoy error:", e); }
+}
 
-    try {
-        await buildBleTimeline();
-    } catch (e) {
-        console.error("BLE timeline error:", e);
-    }
+main();
 
-    try {
-        await buildWifiHeatmap();
-    } catch (e) {
-        console.error("WiFi heatmap error:", e);
-    }
-
-    try {
-        await buildConvoys();
-    } catch (e) {
-        console.error("Convoy error:", e);
-    }
-
-
-})();
 
 document.getElementById("timeWindow").addEventListener("change", () => {
     buildWifiTimeline();

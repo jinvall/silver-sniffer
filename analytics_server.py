@@ -5,9 +5,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import socket
 import urllib.request
+import logging
 
-import pyarrow.dataset as ds
-import pyarrow.compute as pc
+try:
+    import pyarrow.dataset as ds
+    import pyarrow.compute as pc
+except ImportError:
+    ds = None
+    pc = None
+    logging.warning("pyarrow is not installed; analytics endpoints are disabled")
 
 WIFI_PARQUET = "wifi_capture.parquet"
 BLE_PARQUET = "ble_capture.parquet"
@@ -56,13 +62,24 @@ load_blocked()
 # SAFETY: Remove 0-byte parquet files before loading dataset
 # -------------------------------------------------------------------
 def safe_dataset(path):
+    if ds is None:
+        raise RuntimeError("pyarrow is required for analytics_dataset operations")
+    if not os.path.exists(path):
+        return None
     if os.path.isdir(path):
+        # remove any zero-byte parquet fragments left behind by crashes
         for root, dirs, files in os.walk(path):
             for f in files:
                 full = os.path.join(root, f)
                 if full.endswith(".parquet") and os.path.getsize(full) == 0:
-                    print("Removing empty parquet file:", full)
+                    logging.getLogger("analytics_server").warning("Removing empty parquet file: %s", full)
                     os.remove(full)
+        # if the directory now has no parquet files, return None
+        if not any(f.endswith(".parquet") for _, _, files in os.walk(path) for f in files):
+            return None
+    else:
+        if os.path.getsize(path) == 0:
+            return None
     return ds.dataset(path, format="parquet")
 
 
@@ -74,6 +91,8 @@ def parse_time_range(table, qs):
     Returns (filtered_table, min_ts_s, max_ts_s) where min/max are epoch seconds
     after applying optional ?since=, ?start=, ?end= filters.
     """
+    if pc is None:
+        raise RuntimeError("pyarrow compute is required for parse_time_range")
     col = table["timestamp"]
     ts_s = pc.cast(col, "timestamp[s]", safe=False)
     ts_int = pc.cast(ts_s, "int64")
@@ -114,6 +133,8 @@ def parse_time_range(table, qs):
 # UNIVERSAL TIMESTAMP → BUCKET LOGIC (works on all PyArrow versions)
 # -------------------------------------------------------------------
 def bucketize_timestamp(table, bucket_seconds):
+    if pc is None:
+        raise RuntimeError("pyarrow compute is required for bucketize_timestamp")
     ts = pc.cast(table["timestamp"], "timestamp[s]", safe=False)
     ts_int = pc.cast(ts, "int64")
     bucket = pc.cast(pc.divide(ts_int, bucket_seconds), "int64")
@@ -125,6 +146,8 @@ def bucketize_timestamp(table, bucket_seconds):
 # -------------------------------------------------------------------
 def wifi_timeline(qs, bucket_seconds=5):
     dset = safe_dataset(WIFI_PARQUET)
+    if dset is None:
+        return {"buckets": [], "bucket_seconds": bucket_seconds}
     table = dset.to_table(columns=["timestamp", "bssid", "rssi", "channel"])
 
     if table.num_rows == 0:
@@ -185,6 +208,8 @@ def wifi_timeline(qs, bucket_seconds=5):
 # -------------------------------------------------------------------
 def wifi_channel_heatmap(qs, bucket_seconds=30):
     dset = safe_dataset(WIFI_PARQUET)
+    if dset is None:
+        return {"cells": [], "bucket_seconds": bucket_seconds}
     table = dset.to_table(columns=["timestamp", "channel"])
 
     if table.num_rows == 0:
@@ -228,6 +253,8 @@ def wifi_channel_heatmap(qs, bucket_seconds=30):
 # -------------------------------------------------------------------
 def ble_timeline(qs, bucket_seconds=5):
     dset = safe_dataset(BLE_PARQUET)
+    if dset is None:
+        return {"buckets": [], "bucket_seconds": bucket_seconds}
     table = dset.to_table(columns=["timestamp", "addr", "rssi"])
 
     if table.num_rows == 0:
@@ -279,8 +306,12 @@ def convoy_detection(qs, bucket_seconds=30):
 
     # ---- WiFi side ----
     wifi_dset = safe_dataset(WIFI_PARQUET)
-    wifi_table = wifi_dset.to_table(columns=["timestamp", "bssid"])
-    if wifi_table.num_rows > 0:
+    if wifi_dset is not None:
+        wifi_table = wifi_dset.to_table(columns=["timestamp", "bssid"])
+    else:
+        wifi_table = None
+
+    if wifi_table is not None and wifi_table.num_rows > 0:
         wifi_table, _, _ = parse_time_range(wifi_table, qs)
         if wifi_table.num_rows > 0:
             wifi_bucket = bucketize_timestamp(wifi_table, bucket_seconds)
@@ -300,8 +331,11 @@ def convoy_detection(qs, bucket_seconds=30):
 
     # ---- BLE side ----
     ble_dset = safe_dataset(BLE_PARQUET)
-    ble_table = ble_dset.to_table(columns=["timestamp", "addr"])
-    if ble_table.num_rows > 0:
+    if ble_dset is not None:
+        ble_table = ble_dset.to_table(columns=["timestamp", "addr"])
+    else:
+        ble_table = None
+    if ble_table is not None and ble_table.num_rows > 0:
         ble_table, _, _ = parse_time_range(ble_table, qs)
         if ble_table.num_rows > 0:
             ble_bucket = bucketize_timestamp(ble_table, bucket_seconds)

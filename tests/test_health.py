@@ -29,3 +29,14 @@ def test_health_status_parquet_flags(tmp_path):
     assert isinstance(h2['ws'], bool)
     assert isinstance(h2['dashboard'], bool)
     assert isinstance(h2['blocked_count'], int)
+
+
+def test_timeline_handles_missing_parquet(tmp_path):
+    analytics_server.WIFI_PARQUET = str(tmp_path / 'missing_wifi.parquet')
+    analytics_server.BLE_PARQUET = str(tmp_path / 'missing_ble.parquet')
+
+    wifi = analytics_server.wifi_timeline({}, bucket_seconds=5)
+    assert wifi == {"buckets": [], "bucket_seconds": 5}
+
+    ble = analytics_server.ble_timeline({}, bucket_seconds=10)
+    assert ble == {"buckets": [], "bucket_seconds": 10}

@@ -46,12 +46,7 @@ async def start_ws_and_ingest(serial_port, baud, no_ble):
     # configure ingest globals from CLI args
     ingest.SERIAL_PORT = serial_port
     ingest.BAUD = baud
-    if no_ble:
-        # ingest.py reads BleakScanner conditionally; setting a flag is enough
-        ingest.NO_BLE = True
-
-    # start websocket server (ws://:8765) and then run ingest_loop()
-   
+    # start websocket server (ws://:8765) and then run ingest loop
     print("Starting ingest loop (serial + optional BLE)")
     await ingest._run(no_ble=no_ble)
 

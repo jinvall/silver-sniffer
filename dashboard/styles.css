@@ -133,7 +133,7 @@ th {
   font-size: 13px;
   pointer-events: none;
   display: none;
-  z-index: 9999;
+  z-index: 100001;
   white-space: nowrap;
 }
 /* ===========================
@@ -213,7 +213,18 @@ th {
    WIFI RADAR CANVAS
    =========================== */
 
-#wifiRadar {
+#wifiRadar,
+#bleRadar,
+#waterfall {
+  touch-action: none;
+}
+
+#wifiRadar,
+#bleRadar {
+  width: 100%;
+  height: 300px;
+  max-width: 100%;
+  display: block;
   background: #000;
   border: 1px solid #333;
   border-radius: 4px;
@@ -233,8 +244,27 @@ th {
   font-size: 13px;
   pointer-events: none;
   display: none;
-  z-index: 9999;
+  z-index: 100001;
   white-space: nowrap;
+}
+
+#waterfall {
+  width: 100%;
+  height: 300px;
+  max-height: 300px;
+}
+
+#enlarge-content #waterfall {
+  height: 300px !important;
+}
+
+#bssidTable tbody tr.hovered {
+  background: rgba(102, 204, 255, 0.12);
+}
+
+.panel.hovered {
+  border-color: #66ccff;
+  box-shadow: 0 0 0 2px rgba(102, 204, 255, 0.25);
 }
 
 /* ===========================

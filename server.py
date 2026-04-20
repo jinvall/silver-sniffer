@@ -1,7 +1,7 @@
 import asyncio
 import threading
-from ws_broadcast import start_server
-from ingest import ingest_loop, HISTORY, make_timeline
+from ws_broadcast import start_server, make_timeline, HISTORY
+from ingest import ingest_loop
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 

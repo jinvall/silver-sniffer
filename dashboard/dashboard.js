@@ -14,8 +14,9 @@ const bssidMap = {};
 const bleMap = {};
 const wifiMap = {};
 
-// set of blocked devices (persisted server-side)
+// set of blocked and ignored devices (persisted server-side + local filtering)
 const blockedSet = new Set();
+const ignoredSet = new Set();
 
 
 // ===============================
@@ -138,8 +139,8 @@ function updateWaterfall(frame) {
 function updateBSSID(frame) {
     const key = frame.bssid || "00:00:00:00:00:00";
 
-    // respect blocked list (client-side filtering)
-    if (blockedSet.has(`wifi:${key}`)) return;
+    // respect blocked and ignored lists (client-side filtering)
+    if (blockedSet.has(`wifi:${key}`) || ignoredSet.has(`wifi:${key}`)) return;
 
     if (!bssidMap[key]) {
         bssidMap[key] = {
@@ -168,6 +169,7 @@ function updateBSSID(frame) {
 
     for (const [bssid, info] of Object.entries(bssidMap)) {
         const row = document.createElement("tr");
+        row.dataset.bssid = bssid;
         row.innerHTML = `
             <td>${bssid}</td>
             <td>${info.ssid}</td>
@@ -175,6 +177,9 @@ function updateBSSID(frame) {
             <td>${info.channel}</td>
             <td>${info.lastSeen}</td>
         `;
+        if (hoveredWifiBssid && hoveredWifiBssid === bssid) {
+            row.classList.add("hovered");
+        }
         tbody.appendChild(row);
     }
 
@@ -200,8 +205,66 @@ const bleCanvas = document.getElementById("bleRadar");
 const bleCtx = bleCanvas.getContext("2d");
 bleCanvas.width = 300;
 bleCanvas.height = 300;
+bleCanvas.style.width = '100%';
+bleCanvas.style.height = '300px';
 
 const bleTooltip = document.getElementById("bleTooltip");
+let hoveredBleAddr = null;
+let hoveredWifiBssid = null;
+
+function setPanelHover(panelId, active) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    panel.classList.toggle("hovered", active);
+}
+
+function setWifiRowHover(bssid) {
+    document.querySelectorAll("#bssidTable tbody tr").forEach(row => {
+        row.classList.toggle("hovered", row.dataset.bssid === bssid);
+    });
+}
+
+function clearBleHover() {
+    hoveredBleAddr = null;
+    bleTooltip.style.display = "none";
+    setPanelHover("ble-panel", false);
+    drawBLERadar();
+}
+
+function clearWifiHover() {
+    hoveredWifiBssid = null;
+    wifiTooltip.style.display = "none";
+    setPanelHover("wifi-panel", false);
+    setWifiRowHover(null);
+    drawWiFiRadar();
+}
+
+function clampTooltipPosition(tooltip, pageX, pageY) {
+    const padding = 12;
+    const wasHidden = tooltip.style.display === "none" || window.getComputedStyle(tooltip).display === "none";
+    let previousVisibility;
+    if (wasHidden) {
+        previousVisibility = tooltip.style.visibility;
+        tooltip.style.visibility = "hidden";
+        tooltip.style.display = "block";
+    }
+
+    const rect = tooltip.getBoundingClientRect();
+    const maxX = document.documentElement.clientWidth - rect.width - padding;
+    const maxY = document.documentElement.clientHeight - rect.height - padding;
+    let left = pageX + padding;
+    let top = pageY + padding;
+    if (left > maxX) left = Math.max(padding, pageX - rect.width - padding);
+    if (top > maxY) top = Math.max(padding, pageY - rect.height - padding);
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+
+    if (wasHidden) {
+        tooltip.style.visibility = previousVisibility || "visible";
+        tooltip.style.display = "none";
+    }
+}
 
 function computeLane(distance) {
     if (distance < 2) return 1;
@@ -224,8 +287,8 @@ function updateBLE(frame) {
     const addr = frame.addr;
     const dist = frame.distance_m || 5;
 
-    // respect blocked list for BLE
-    if (blockedSet.has(`ble:${addr}`)) return;
+    // respect blocked and ignored lists for BLE
+    if (blockedSet.has(`ble:${addr}`) || ignoredSet.has(`ble:${addr}`)) return;
 
     if (!bleMap[addr]) {
         const lane = computeLane(dist);
@@ -307,7 +370,6 @@ function drawBLERadar() {
     const cy = cssH / 2;
 
     window._bleDotPositions = [];
-    window._wifiDotPositions = [];
 
     bleCtx.strokeStyle = "#333";
     const scaleFactor = cssW / 300; // scale rings/radii relative to default
@@ -349,13 +411,21 @@ function drawBLERadar() {
         bleCtx.font = `${12 * Math.max(1, scaleFactor)}px monospace`;
         bleCtx.fillText(`${dist.toFixed(1)}m`, x + 8, y - 8);
 
+        if (addr === hoveredBleAddr) {
+            bleCtx.strokeStyle = "rgba(255,255,255,0.8)";
+            bleCtx.lineWidth = 2;
+            bleCtx.beginPath();
+            bleCtx.arc(x, y, size + 5, 0, Math.PI * 2);
+            bleCtx.stroke();
+        }
+
         if (fade > 0.3) {
             window._bleDotPositions.push({ addr, dev, x, y, size });
         }
     }
 }
 
-bleCanvas.addEventListener("mousemove", (e) => {
+function processBleHoverEvent(e) {
     const rect = bleCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -370,9 +440,12 @@ bleCanvas.addEventListener("mousemove", (e) => {
     }
 
     if (!hit) {
-        bleTooltip.style.display = "none";
+        clearBleHover();
         return;
     }
+
+    hoveredBleAddr = hit.addr;
+    setPanelHover("ble-panel", true);
 
     const dev = hit.dev;
 
@@ -384,10 +457,14 @@ bleCanvas.addEventListener("mousemove", (e) => {
         Movement: ${dev.movement}
     `;
 
-    bleTooltip.style.left = (e.pageX + 12) + "px";
-    bleTooltip.style.top = (e.pageY + 12) + "px";
+    clampTooltipPosition(bleTooltip, e.pageX, e.pageY);
     bleTooltip.style.display = "block";
-});
+    drawBLERadar();
+}
+
+bleCanvas.addEventListener("pointermove", processBleHoverEvent);
+bleCanvas.addEventListener("pointerdown", processBleHoverEvent);
+bleCanvas.addEventListener("pointerleave", clearBleHover);
 
 // click-to-block support for BLE radar
 bleCanvas.addEventListener('click', async (e) => {
@@ -416,6 +493,7 @@ bleCanvas.addEventListener('click', async (e) => {
         <div style="font-size:12px; color:#999;">${hit.dev.name || '(unnamed)'}</div>
         <div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end;">
           <button id="popup-block">${blockedSet.has(devStr) ? 'Unblock' : 'Block'}</button>
+          <button id="popup-ignore">Ignore</button>
           <button id="popup-report">Report</button>
           <button id="popup-cancel">Cancel</button>
         </div>
@@ -452,6 +530,13 @@ bleCanvas.addEventListener('click', async (e) => {
         drawBLERadar();
     };
 
+    document.getElementById('popup-ignore').onclick = () => {
+        ignoredSet.add(devStr);
+        delete bleMap[addr];
+        popup.style.display = 'none';
+        drawBLERadar();
+    };
+
     // BLE REPORT
     document.getElementById('popup-report').onclick = () => {
         popup.style.display = 'none';
@@ -468,8 +553,6 @@ const wifiCtx = wifiCanvas.getContext("2d");
 wifiCanvas.width = 300;
 wifiCanvas.height = 300;
 
-let wifiDotPositions = [];
-
 const wifiTooltip = document.getElementById("wifiTooltip");
 
 function rssiToDistance(rssi) {
@@ -484,8 +567,8 @@ function updateWiFiRadar(frame) {
     const rssi = frame.rssi || -80;
     const dist = rssiToDistance(rssi);
 
-    // respect blocked list
-    if (blockedSet.has(`wifi:${bssid}`)) return;
+    // respect blocked and ignored lists
+    if (blockedSet.has(`wifi:${bssid}`) || ignoredSet.has(`wifi:${bssid}`)) return;
 
     if (!wifiMap[bssid]) {
         const lane = computeLane(dist);
@@ -630,20 +713,26 @@ function drawWiFiRadar() {
         wifiCtx.font = `${10 * Math.max(1, scaleFactor)}px monospace`;
         wifiCtx.fillText(bssid.slice(0, 8), x + 8, y - 8);
 
+        if (bssid === hoveredWifiBssid) {
+            wifiCtx.strokeStyle = "rgba(255,255,255,0.8)";
+            wifiCtx.lineWidth = 2;
+            wifiCtx.beginPath();
+            wifiCtx.arc(x, y, size + 5, 0, Math.PI * 2);
+            wifiCtx.stroke();
+        }
+
         // CRITICAL: store dot for popup detection
         window._wifiDotPositions.push({ bssid, dev, x, y, size });
     }
 }
 
 
-wifiCanvas.addEventListener("mousemove", (e) => {
+function processWifiHoverEvent(e) {
     const rect = wifiCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
     let hit = null;
-
-    // THIS is the fix — use the same array the radar fills
     for (const dot of window._wifiDotPositions) {
         if (Math.hypot(mx - dot.x, my - dot.y) <= dot.size + 4) {
             hit = dot;
@@ -652,9 +741,13 @@ wifiCanvas.addEventListener("mousemove", (e) => {
     }
 
     if (!hit) {
-        wifiTooltip.style.display = "none";
+        clearWifiHover();
         return;
     }
+
+    hoveredWifiBssid = hit.bssid;
+    setPanelHover("wifi-panel", true);
+    setWifiRowHover(hit.bssid);
 
     const dev = hit.dev;
 
@@ -666,9 +759,93 @@ wifiCanvas.addEventListener("mousemove", (e) => {
         Distance: ${dev.distance?.toFixed(1)}m
     `;
 
-    wifiTooltip.style.left = (e.pageX + 12) + "px";
-    wifiTooltip.style.top = (e.pageY + 12) + "px";
+    clampTooltipPosition(wifiTooltip, e.pageX, e.pageY);
     wifiTooltip.style.display = "block";
+    drawWiFiRadar();
+}
+
+wifiCanvas.addEventListener("pointermove", processWifiHoverEvent);
+wifiCanvas.addEventListener("pointerdown", processWifiHoverEvent);
+wifiCanvas.addEventListener("pointerleave", clearWifiHover);
+
+// click-to-pin + popup actions for WIFI radar
+wifiCanvas.addEventListener('click', async (e) => {
+    const rect = wifiCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let hit = null;
+    for (const dot of window._wifiDotPositions) {
+        if (Math.hypot(mx - dot.x, my - dot.y) <= dot.size + 4) {
+            hit = dot;
+            break;
+        }
+    }
+    if (!hit) return;
+
+    e.stopPropagation();
+
+    const bssid = hit.bssid;
+    const dev = wifiMap[bssid];
+    const devStr = `wifi:${bssid}`;
+
+    const popup = document.getElementById('radarActionPopup');
+    popup.innerHTML = `
+        <div style="font-weight:600; margin-bottom:6px;">${bssid}</div>
+        <div style="font-size:12px; color:#999;">SSID: ${dev?.ssid || '(hidden)'}</div>
+        <div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end;">
+          <button id="popup-pin">${dev?.pinned ? 'Unpin' : 'Pin'}</button>
+          <button id="popup-block">${blockedSet.has(devStr) ? 'Unblock' : 'Block'}</button>
+          <button id="popup-ignore">Ignore</button>
+          <button id="popup-report">Report</button>
+          <button id="popup-cancel">Cancel</button>
+        </div>
+    `;
+
+    const wifiPanel = document.getElementById('wifi-panel');
+    const popupContainer = (wifiPanel && wifiPanel.parentNode && wifiPanel.parentNode.id === 'enlarge-content')
+        ? document.getElementById('enlarge-content')
+        : document.body;
+    popupContainer.appendChild(popup);
+
+    if (popupContainer.id === 'enlarge-content') {
+        const parentRect = popupContainer.getBoundingClientRect();
+        popup.style.left = (e.clientX - parentRect.left + 8) + 'px';
+        popup.style.top = (e.clientY - parentRect.top + 8) + 'px';
+    } else {
+        popup.style.left = (e.pageX + 8) + 'px';
+        popup.style.top = (e.pageY + 8) + 'px';
+    }
+    popup.style.display = 'block';
+
+    document.getElementById('popup-cancel').onclick = () => { popup.style.display = 'none'; };
+    document.getElementById('popup-pin').onclick = () => { if (dev) { dev.pinned = !dev.pinned; } popup.style.display = 'none'; drawWiFiRadar(); };
+    document.getElementById('popup-block').onclick = async () => {
+        if (blockedSet.has(devStr)) {
+            await sendUnblock(devStr);
+            blockedSet.delete(devStr);
+        } else {
+            await sendBlock(devStr);
+            blockedSet.add(devStr);
+            delete wifiMap[bssid];
+            delete bssidMap[bssid];
+            updateWifiStatsPanel();
+        }
+        popup.style.display = 'none';
+        drawWiFiRadar();
+    };
+    document.getElementById('popup-ignore').onclick = () => {
+        ignoredSet.add(devStr);
+        delete wifiMap[bssid];
+        delete bssidMap[bssid];
+        updateWifiStatsPanel();
+        popup.style.display = 'none';
+        drawWiFiRadar();
+    };
+    document.getElementById('popup-report').onclick = () => {
+        popup.style.display = 'none';
+        openBssidReport(bssid);
+    };
 });
 
 // ------------------------------------------------------
@@ -913,45 +1090,6 @@ function openBssidReport(bssid) {
         <div><b>Dominant movement:</b> ${movementSummary}</div>
     `;
 }
-
-// ===============================
-// WIFI TOOLTIP HANDLER
-// ===============================
-wifiCanvas.addEventListener("mousemove", (e) => {
-    const rect = wifiCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    let hit = null;
-
-    for (const dot of wifiDotPositions) {
-        if (Math.hypot(mx - dot.x, my - dot.y) <= dot.size + 4) {
-            hit = dot;
-            break;
-        }
-    }
-
-    if (!hit) {
-        wifiTooltip.style.display = "none";
-        return;
-    }
-
-    const dev = hit.dev;
-
-    wifiTooltip.innerHTML = `
-        <strong>${hit.bssid}</strong><br>
-        SSID: ${dev.ssid}<br>
-        RSSI: ${dev.lastRSSI}<br>
-        Movement: ${dev.movement}<br>
-        Distance: ${dev.distance?.toFixed(1)}m
-    `;
-
-
-    wifiTooltip.style.left = (e.pageX + 12) + "px";
-    wifiTooltip.style.top = (e.pageY + 12) + "px";
-    wifiTooltip.style.display = "block";
-});
-
 
 // ======================================================
 // WEBSOCKET HANDLER

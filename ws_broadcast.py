@@ -1,11 +1,24 @@
 import asyncio
-import websockets
 import json
-
 import time
+import logging
+
+try:
+    import websockets
+except ImportError:
+    websockets = None
+    logging.warning("websockets is not installed; server/broadcast functionality is disabled")
 MAX_HISTORY = 60 * 60  # 1 hour
 clients = set()
 # --- Historical storage for analytics ---
+HISTORY = {
+    "wifi": [],
+    "ble": [],
+    "movement": [],
+    "vendors": {},
+    "fingerprints_wifi": {},
+    "fingerprints_ble": {},
+}
 
 
 
@@ -64,7 +77,10 @@ async def broadcast(obj):
         clients.discard(d)
 
 async def start_server():
+    if websockets is None:
+        raise RuntimeError("websockets is required for websocket server")
     return await websockets.serve(handler, "0.0.0.0", 8765)
+
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 
